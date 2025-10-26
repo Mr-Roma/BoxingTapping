@@ -1,4 +1,3 @@
-
 // ============================================================
 //  HandPunchViewController.swift
 //  HandDetectionToucApp
@@ -13,7 +12,6 @@ class HandPunchViewController: UIViewController {
     
     // Communication back to SwiftUI
     var onScoreUpdate: ((Int) -> Void)?
-    var onPunchStatsUpdate: ((PunchStats) -> Void)?
     
     // Model
     private var gameState = BoxingState()
@@ -28,7 +26,7 @@ class HandPunchViewController: UIViewController {
     private var cameraPreviewLayer: CALayer?
     
     // Game Logic Properties
-    private let punchVelocityThreshold: CGFloat = 15.0
+    private let touchVelocityThreshold: CGFloat = 10.0
     private var hitCooldownTimer: Timer?
 
     // MARK: - Lifecycle
@@ -96,29 +94,18 @@ class HandPunchViewController: UIViewController {
     
     private func processHandPositions(leftFist: CGPoint?, rightFist: CGPoint?) {
         if let leftFist = leftFist {
-            if isPunch(currentPoint: leftFist, previousPoint: gameState.previousLeftFistPoint) {
-                let punchType = analyzePunchType(fistPoint: leftFist, isLeftHand: true, previousPoint: gameState.previousLeftFistPoint)
-                checkHit(fistPoint: leftFist, punchType: punchType)
+            if isTouch(currentPoint: leftFist, previousPoint: gameState.previousLeftFistPoint) {
+                checkHit(fistPoint: leftFist)
             }
             gameState.previousLeftFistPoint = leftFist
         }
         
         if let rightFist = rightFist {
-            if isPunch(currentPoint: rightFist, previousPoint: gameState.previousRightFistPoint) {
-                let punchType = analyzePunchType(fistPoint: rightFist, isLeftHand: false, previousPoint: gameState.previousRightFistPoint)
-                checkHit(fistPoint: rightFist, punchType: punchType)
+            if isTouch(currentPoint: rightFist, previousPoint: gameState.previousRightFistPoint) {
+                checkHit(fistPoint: rightFist)
             }
             gameState.previousRightFistPoint = rightFist
         }
-    }
-    
-    private func analyzePunchType(fistPoint: CGPoint, isLeftHand: Bool, previousPoint: CGPoint?) -> PunchType {
-        return PunchAnalyzer.analyzePunchType(
-            fistPoint: fistPoint,
-            isLeftHand: isLeftHand,
-            bodyJoints: gameState.currentBodyJoints,
-            previousFistPoint: previousPoint
-        )
     }
     
     private func updateBodyPose(_ bodyPose: BodyPoseData?) {
@@ -135,44 +122,30 @@ class HandPunchViewController: UIViewController {
         }
     }
     
-    private func isPunch(currentPoint: CGPoint, previousPoint: CGPoint?) -> Bool {
+    private func isTouch(currentPoint: CGPoint, previousPoint: CGPoint?) -> Bool {
         guard let previousPoint = previousPoint else { return false }
         let deltaX = currentPoint.x - previousPoint.x
         let deltaY = currentPoint.y - previousPoint.y
         let velocity = sqrt(deltaX * deltaX + deltaY * deltaY)
-        return velocity > punchVelocityThreshold
+        return velocity > touchVelocityThreshold
     }
     
-    private func checkHit(fistPoint: CGPoint, punchType: PunchType) {
+    private func checkHit(fistPoint: CGPoint) {
         guard gameState.canRegisterHit else { return }
         
         let distance = hypot(fistPoint.x - gameState.targetCenter.x, fistPoint.y - gameState.targetCenter.y)
         
         if distance < TargetView.defaultSize / 2 + 30 {
-            handleHit(punchType: punchType)
+            handleHit()
         }
     }
     
-    private func handleHit(punchType: PunchType) {
+    private func handleHit() {
         // 1. Update Model
         gameState.score += 1
         gameState.canRegisterHit = false
         
-        // Update punch statistics
-        gameState.punchStats.totalPunches += 1
-        gameState.punchStats.lastPunchType = punchType
-        
-        switch punchType {
-        case .jab:
-            gameState.punchStats.jabs += 1
-        case .straight:
-            gameState.punchStats.straights += 1
-        case .unknown:
-            break
-        }
-        
         onScoreUpdate?(gameState.score)
-        onPunchStatsUpdate?(gameState.punchStats)
         
         // 2. Update View
         hitCooldownTimer?.invalidate()
@@ -180,9 +153,8 @@ class HandPunchViewController: UIViewController {
         targetView.animateHitAndRespawn(newCenter: newCenter)
         gameState.targetCenter = newCenter
         
-        // Haptic feedback (different intensity based on punch type)
-        let style: UIImpactFeedbackGenerator.FeedbackStyle = punchType == .straight ? .heavy : .medium
-        UIImpactFeedbackGenerator(style: style).impactOccurred()
+        // Haptic feedback
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
         // 3. Set Cooldown
         hitCooldownTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
@@ -225,4 +197,3 @@ extension HandPunchViewController: CameraServiceDelegate {
         }
     }
 }
-
